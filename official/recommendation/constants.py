@@ -14,8 +14,6 @@
 # ==============================================================================
 """Central location for NCF specific values."""
 
-import sys
-
 import numpy as np
 
 from official.datasets import movielens
@@ -29,7 +27,6 @@ TRAIN_USER_KEY = "train_{}".format(movielens.USER_COLUMN)
 TRAIN_ITEM_KEY = "train_{}".format(movielens.ITEM_COLUMN)
 TRAIN_LABEL_KEY = "train_labels"
 MASK_START_INDEX = "mask_start_index"
-VALID_POINT_MASK = "valid_point_mask"
 EVAL_USER_KEY = "eval_{}".format(movielens.USER_COLUMN)
 EVAL_ITEM_KEY = "eval_{}".format(movielens.ITEM_COLUMN)
 
@@ -37,7 +34,9 @@ USER_MAP = "user_map"
 ITEM_MAP = "item_map"
 
 USER_DTYPE = np.int32
-ITEM_DTYPE = np.int32
+ITEM_DTYPE = np.uint16
+LABEL_DTYPE = np.int8
+DUPE_MASK_DTYPE = np.bool
 
 # In both datasets, each user has at least 20 ratings.
 MIN_NUM_RATINGS = 20
@@ -56,24 +55,11 @@ DUPLICATE_MASK = "duplicate_mask"
 HR_METRIC_NAME = "HR_METRIC"
 NDCG_METRIC_NAME = "NDCG_METRIC"
 
-# Trying to load a cache created in py2 when running in py3 will cause an
-# error due to differences in unicode handling.
-RAW_CACHE_FILE = "raw_data_cache_py{}.pickle".format(sys.version_info[0])
+RAW_CACHE_FILE = "raw_data_cache.pickle"
 CACHE_INVALIDATION_SEC = 3600 * 24
 
 # ==============================================================================
-# == Data Generation ===========================================================
+# == Subprocess Data Generation ================================================
 # ==============================================================================
 CYCLES_TO_BUFFER = 3  # The number of train cycles worth of data to "run ahead"
                       # of the main training loop.
-
-# Number of batches to run per epoch when using synthetic data. At high batch
-# sizes, we run for more batches than with real data, which is good since
-# running more batches reduces noise when measuring the average batches/second.
-SYNTHETIC_BATCHES_PER_EPOCH = 2000
-
-# Only used when StreamingFilesDataset is used.
-NUM_FILE_SHARDS = 16
-TRAIN_FOLDER_TEMPLATE = "training_cycle_{}"
-EVAL_FOLDER = "eval_data"
-SHARD_TEMPLATE = "shard_{}.tfrecords"
