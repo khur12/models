@@ -247,7 +247,8 @@ def run_ncf(_):
   if FLAGS.use_keras:
     print(">>>>>> zhenzheng use_keras")
 
-    train_input_fn = producer.make_input_fn(is_training=True)
+    train_input_fn = data_preprocessing.make_input_fn(
+        producer, is_training=True, use_tpu=False)
 
     user_input = tf.keras.layers.Input(
         shape=(1,), batch_size=FLAGS.batch_size, name="user_id", dtype=tf.int32)
@@ -288,6 +289,7 @@ def run_ncf(_):
         steps_per_epoch=num_train_steps,
         callbacks=[],
         verbose=0)
+
     return
 
 
@@ -305,12 +307,14 @@ def run_ncf(_):
     mlperf_helper.ncf_print(key=mlperf_helper.TAGS.TRAIN_EPOCH,
                             value=cycle_index)
 
-    train_input_fn = producer.make_input_fn(is_training=True)
+    train_input_fn = data_preprocessing.make_input_fn(
+                producer=producer, is_training=True, use_tpu=params["use_tpu"])
     train_estimator.train(input_fn=train_input_fn, hooks=train_hooks,
                           steps=num_train_steps)
 
     tf.logging.info("Beginning evaluation.")
-    eval_input_fn = producer.make_input_fn(is_training=False)
+    eval_input_fn = data_preprocessing.make_input_fn(
+                producer=producer, is_training=False, use_tpu=params["use_tpu"])
 
     mlperf_helper.ncf_print(key=mlperf_helper.TAGS.EVAL_START,
                             value=cycle_index)
