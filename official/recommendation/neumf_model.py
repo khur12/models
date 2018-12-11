@@ -81,7 +81,9 @@ def neumf_model_fn(features, labels, mode, params):
   if params["use_tpu"]:
     logits = construct_model_tf(users, items, params)
   else:
-    logits = construct_model_keras(users, items, params).output
+    user_input = tf.keras.layers.Input(tensor=users)
+    item_input = tf.keras.layers.Input(tensor=items)
+    logits = construct_model_keras(user_input, item_input, params).output
 
   # Softmax with the first column of zeros is equivalent to sigmoid.
   softmax_logits = tf.concat([tf.zeros(logits.shape, dtype=logits.dtype),
@@ -108,11 +110,7 @@ def neumf_model_fn(features, labels, mode, params):
     mlperf_helper.ncf_print(key=mlperf_helper.TAGS.OPT_HP_ADAM_EPSILON,
                             value=params["epsilon"])
 
-    optimizer = tf.train.AdamOptimizer(
-        learning_rate=params["learning_rate"], beta1=params["beta1"],
-        beta2=params["beta2"], epsilon=params["epsilon"])
-    if params["use_tpu"]:
-      optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+    optimizer = get_optimizer(params)
 
     mlperf_helper.ncf_print(key=mlperf_helper.TAGS.MODEL_HP_LOSS_FN,
                             value=mlperf_helper.TAGS.BCE)
@@ -142,6 +140,16 @@ def neumf_model_fn(features, labels, mode, params):
 
   else:
     raise NotImplementedError
+
+
+def get_optimizer(params):
+  optimizer = tf.train.AdamOptimizer(
+      learning_rate=params["learning_rate"], beta1=params["beta1"],
+      beta2=params["beta2"], epsilon=params["epsilon"])
+  if params["use_tpu"]:
+    optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+
+  return optimizer
 
 
 def extract_topology_params(params):
@@ -236,12 +244,12 @@ def construct_model_tf(users, items, params):
   return logits
 
 
-def construct_model_keras(users, items, params):
+def construct_model_keras(user_input, item_input, params):
   # type: (tf.Tensor, tf.Tensor, dict) -> tf.keras.Model
   """Initialize NeuMF model.
   Args:
-    users: Tensor of user ids.
-    items: Tensor of item ids.
+    user_input: Input layer for the users
+    item_input: Input layer for the items
     params: Dict of hyperparameters.
   Raises:
     ValueError: if the first model layer is not even.
@@ -251,9 +259,6 @@ def construct_model_keras(users, items, params):
   (num_users, num_items, model_layers, mf_regularization, mlp_reg_layers,
    mf_dim) = extract_topology_params(params)
 
-  # Input variables
-  user_input = tf.keras.layers.Input(tensor=users)
-  item_input = tf.keras.layers.Input(tensor=items)
   batch_size = user_input.get_shape()[0]
 
   # Initializer for embedding layers

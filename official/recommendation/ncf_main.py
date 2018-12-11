@@ -185,6 +185,19 @@ def parse_flags(flags_obj):
   }
 
 
+def _logitfy(inputs, base_model):
+  logits = base_model(inputs)
+  zero_tensor = tf.keras.layers.Lambda(lambda x: x * 0)(logits)
+  to_concatenate = [zero_tensor, logits]
+  concat_layer = tf.keras.layers.Concatenate(axis=1)(to_concatenate)
+
+  reshape_layer = tf.keras.layers.Reshape(
+      target_shape=(concat_layer.shape[1].value,))(concat_layer)
+
+  model = tf.keras.Model(inputs=inputs, outputs=reshape_layer)
+  return model
+
+
 def main(_):
   with logger.benchmark_context(FLAGS), \
        mlperf_helper.LOGGER(FLAGS.output_ml_perf_compliance_logging):
@@ -228,13 +241,62 @@ def run_ncf(_):
   params["num_users"], params["num_items"] = num_users, num_items
   model_helpers.apply_clean(flags.FLAGS)
 
+  target_reached = False
+  mlperf_helper.ncf_print(key=mlperf_helper.TAGS.TRAIN_LOOP)
+
+  if FLAGS.use_keras:
+    print(">>>>>> zhenzheng use_keras")
+
+    train_input_fn = producer.make_input_fn(is_training=True)
+
+    user_input = tf.keras.layers.Input(
+        shape=(1,), batch_size=FLAGS.batch_size, name="user_id", dtype=tf.int32)
+    item_input = tf.keras.layers.Input(
+        shape=(1,), batch_size=FLAGS.batch_size, name="item_id", dtype=tf.int32)
+
+    base_model = neumf_model.construct_model_keras(user_input, item_input, params)
+    keras_model = _logitfy([user_input, item_input], base_model)
+
+    keras_model.summary()
+
+    def softmax_crossentropy_with_logits(y_true, y_pred):
+      """A loss function replicating tf's sparse_softmax_cross_entropy
+      Args:
+        y_true: True labels. Tensor of shape [batch_size,]
+        y_pred: Predictions. Tensor of shape [batch_size, num_classes]
+      """
+      y_true = tf.cast(y_true, tf.int32)
+      return tf.losses.sparse_softmax_cross_entropy(
+        labels=tf.reshape(y_true, [FLAGS.batch_size,]),
+        logits=tf.reshape(y_pred, [FLAGS.batch_size, 2]))
+
+    opt = neumf_model.get_optimizer(params)
+    strategy = distribution_utils.get_distribution_strategy(num_gpus=1)
+
+    keras_model.compile(loss=softmax_crossentropy_with_logits,
+        optimizer=opt,
+        metrics=['accuracy'],
+        distribute=None)
+
+    num_train_steps = (producer.train_batches_per_epoch //
+        params["batches_per_step"])
+
+    train_input_dataset = train_input_fn(params).repeat(FLAGS.train_epochs)
+
+    keras_model.fit(train_input_dataset,
+        epochs=FLAGS.train_epochs,
+        steps_per_epoch=num_train_steps,
+        callbacks=[],
+        verbose=0)
+    return
+
+
+  # Not use Keras
   train_estimator, eval_estimator = construct_estimator(
       model_dir=FLAGS.model_dir, iterations=num_train_steps, params=params)
 
   benchmark_logger, train_hooks = log_and_get_hooks(params["eval_batch_size"])
 
-  target_reached = False
-  mlperf_helper.ncf_print(key=mlperf_helper.TAGS.TRAIN_LOOP)
   for cycle_index in range(total_training_cycle):
     assert FLAGS.epochs_between_evals == 1 or not mlperf_helper.LOGGER.enabled
     tf.logging.info("Starting a training cycle: {}/{}".format(
@@ -452,6 +514,11 @@ def define_ncf_flags():
 
   flags.DEFINE_bool(
       name="use_xla_for_gpu", default=False, help=flags_core.help_wrap(
+          "If True, use XLA for the model function. Only works when using a "
+          "GPU. On TPUs, XLA is always used"))
+
+  flags.DEFINE_bool(
+      name="use_keras", default=False, help=flags_core.help_wrap(
           "If True, use XLA for the model function. Only works when using a "
           "GPU. On TPUs, XLA is always used"))
 

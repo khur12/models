@@ -6,7 +6,7 @@ if [ `id -u` != 0 ]; then
   sudo echo "Success"
 fi
 
-DATASET="ml-20m"
+DATASET="ml-1m"
 
 BUCKET=${BUCKET:-""}
 ROOT_DIR="${BUCKET:-/tmp}/MLPerf_NCF"
@@ -62,7 +62,8 @@ do
   python ncf_main.py --model_dir ${MODEL_DIR} \
                      --data_dir ${DATA_DIR} \
                      --dataset ${DATASET} --hooks "" \
-                     ${DEVICE_FLAG} \
+										 --num_gpus 2 \
+										 --use_keras True
                      --clean \
                      --train_epochs 14 \
                      --batch_size 98304 \
